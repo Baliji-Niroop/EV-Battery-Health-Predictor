@@ -52,16 +52,24 @@ def main() -> None:
     feature_cols = [col for col in df.columns if col not in ["battery_id", "cycle", "SoH"]]
     
     # Fill any missing values before training
-    df = df.fillna(method='ffill').fillna(method='bfill').fillna(0)
+    # Fill NaNs using modern methods
+    df = df.ffill().bfill().fillna(0)
     
     X = df[feature_cols]
     y = df["SoH"]
     
     # Train-test split
-    print("[DEBUG] Splitting data: 80/20")
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42
-    )
+    print("[DEBUG] Splitting data: battery-wise split to avoid leakage")
+    # Get unique batteries
+    unique_batteries = df["battery_id"].unique()
+    np.random.shuffle(unique_batteries)
+    split_idx = int(0.75 * len(unique_batteries))
+    train_batts = set(unique_batteries[:split_idx])
+    test_batts = set(unique_batteries[split_idx:])
+    train_mask = df["battery_id"].isin(train_batts)
+    test_mask = df["battery_id"].isin(test_batts)
+    X_train, X_test = X[train_mask], X[test_mask]
+    y_train, y_test = y[train_mask], y[test_mask]
     
     print(f"[DEBUG] Train size: {len(X_train)}, Test size: {len(X_test)}")
     
@@ -107,6 +115,8 @@ def main() -> None:
             f.write(f"MAE: {mae:.4f}\n")
             f.write(f"RMSE: {rmse:.4f}\n")
             f.write(f"Baseline_MAE: {baseline_mae:.4f}\n")
+            # Log which batteries were used for testing
+            f.write(f"Test_Batteries: {sorted(list(test_batts))}\n")
         print(f"[INFO] Saved metrics to: {metrics_path}")
     except Exception as exc:
         print(f"[ERROR] Failed to save metrics: {exc}")

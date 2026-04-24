@@ -73,6 +73,25 @@ def main() -> None:
             lambda x: x.rolling(window=5, min_periods=1).mean()
         )
     )
+
+    # New Feature 4: dV/dt – voltage change per cycle
+    print("[DEBUG] Computing dV_dt")
+    df["dV_dt"] = df.groupby("battery_id")["voltage_mean"].diff().fillna(0.0)
+
+    # New Feature 5: dT/dt – temperature change per cycle
+    print("[DEBUG] Computing dT_dt")
+    df["dT_dt"] = df.groupby("battery_id")["temp_mean"].diff().fillna(0.0)
+
+    # New Feature 6: Internal resistance proxy (Ohm) approximated as voltage/current
+    print("[DEBUG] Computing internal_resistance_proxy")
+    def _resistance(v, i):
+        try:
+            return float(v) / float(i) if i != 0 else np.nan
+        except Exception:
+            return np.nan
+    df["internal_resistance_proxy"] = df.apply(
+        lambda row: _resistance(row["voltage_mean"], row["current_mean"]), axis=1
+    )
     
     # Fill NaN values safely
     print("[DEBUG] Filling NaN values")

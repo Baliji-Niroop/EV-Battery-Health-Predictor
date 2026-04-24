@@ -171,17 +171,17 @@ def main() -> None:
                 
                 # Find cycle where predicted SoH drops below 80%
                 cycles_below_80 = np.where(soh_pred < 80.0)[0]
-                
                 if len(cycles_below_80) > 0:
-                    k_fail = cycles_below_80[0]
+                    # Map index back to actual cycle number
+                    k_fail = df_battery["cycle"].iloc[cycles_below_80[0]]
                 else:
-                    k_fail = len(soh_pred)
-                
+                    # No failure predicted; use last cycle as fallback
+                    k_fail = df_battery["cycle"].iloc[-1]
                 current_cycle = int(df_battery["cycle"].iloc[-1])
                 rul = max(k_fail - current_cycle, 0)
-                
+
                 col1, col2, col3 = st.columns(3)
-                col1.metric("Predicted Failure Cycle", k_fail)
+                col1.metric("Predicted Failure Cycle", int(k_fail))
                 col2.metric("RUL (cycles remaining)", rul)
                 
                 if rul <= 0:

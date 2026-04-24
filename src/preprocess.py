@@ -163,20 +163,23 @@ def clean_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return df
 
-    df = df.replace([np.inf, -np.inf], np.nan)
+    # Replace deprecated fillna(method=) with modern chaining
+    df = df.ffill().bfill().fillna(0)
     df = df.dropna(how="all", subset=["capacity", "voltage_mean", "current_mean", "temp_mean"])
 
-    max_capacity = df["capacity"].max(skipna=True)
-    if pd.isna(max_capacity) or max_capacity == 0:
-        df["SoH"] = np.nan
-    else:
-        df["SoH"] = (df["capacity"] / max_capacity) * 100.0
+    # Compute SoH per battery (capacity normalized by max per battery)
+    df["SoH"] = df.groupby("battery_id")["capacity"].transform(
+        lambda x: (x / x.max()) * 100.0
+    )
+
 
     return df
 
 
 def main() -> None:
-    """Run preprocessing and save cleaned data to CSV."""
+    """Run preprocessing and save cleaned data."""
+    np.random.seed(42)
+    print(f"[INFO] Random state fixed at 42 for reproducibility")
     root = Path(__file__).resolve().parents[1]
     
     data_dir = root / "data"
