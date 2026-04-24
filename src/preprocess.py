@@ -228,7 +228,12 @@ def main() -> None:
                 
                 # Process extracted files
                 all_frames: List[pd.DataFrame] = []
+                wanted_batteries = ["B0005", "B0006", "B0007", "B0018"]
                 for mat_file in mat_files:
+                    if mat_file.stem not in wanted_batteries:
+                        print(f"[INFO] Skipping {mat_file.name} (not in wanted list)")
+                        continue
+                    
                     print(f"[INFO] Processing {mat_file.name}")
                     df_file = process_file(mat_file)
                     if not df_file.empty:
@@ -261,7 +266,12 @@ def main() -> None:
     else:
         # Process .mat files directly
         all_frames: List[pd.DataFrame] = []
+        wanted_batteries = ["B0005", "B0006", "B0007", "B0018"]
         for mat_file in mat_files:
+            if mat_file.stem not in wanted_batteries:
+                print(f"[INFO] Skipping {mat_file.name} (not in wanted list)")
+                continue
+                
             print(f"[INFO] Processing {mat_file.name}")
             df_file = process_file(mat_file)
             if not df_file.empty:

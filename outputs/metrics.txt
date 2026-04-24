@@ -1,0 +1,3 @@
+MAE: 0.1079
+RMSE: 0.1637
+Baseline_MAE: 0.0000

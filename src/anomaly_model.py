@@ -103,11 +103,11 @@ def main() -> None:
     outputs_dir.mkdir(parents=True, exist_ok=True)
     metrics_path = outputs_dir / "metrics.txt"
     try:
-        with open(metrics_path, "w") as f:
+        with open(metrics_path, "w", encoding="utf-8") as f:
             f.write(f"MAE: {mae:.4f}\n")
             f.write(f"RMSE: {rmse:.4f}\n")
             f.write(f"Baseline_MAE: {baseline_mae:.4f}\n")
-        print(f"[INFO] ✓ Saved metrics to: {metrics_path}")
+        print(f"[INFO] Saved metrics to: {metrics_path}")
     except Exception as exc:
         print(f"[ERROR] Failed to save metrics: {exc}")
     
@@ -130,7 +130,7 @@ def main() -> None:
         plot_path = outputs_dir / "soh_prediction_scatter.png"
         plt.savefig(plot_path)
         plt.close()
-        print(f"[INFO] ✓ Saved prediction scatter plot to: {plot_path}")
+        print(f"[INFO] Saved prediction scatter plot to: {plot_path}")
     except Exception as e:
         print(f"[WARN] Could not generate plot: {e}")
     
@@ -138,7 +138,7 @@ def main() -> None:
     model_path.parent.mkdir(parents=True, exist_ok=True)
     try:
         joblib.dump(model, model_path)
-        print(f"\n[INFO] ✓ Saved model to: {model_path}")
+        print(f"\n[INFO] Saved model to: {model_path}")
     except Exception as exc:
         print(f"[ERROR] Failed to save model: {exc}")
 

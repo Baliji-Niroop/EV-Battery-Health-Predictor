@@ -9,9 +9,13 @@ venv/
 # Jupyter
 .ipynb_checkpoints/
 
-# Raw Data (DO NOT upload heavy datasets)
-data/raw/*.mat
-data/raw/*.zip
+# Raw dataset (DO NOT PUSH)
+data/raw/
+*.mat
+*.zip
+
+# Intermediate files
+data/processed/cleaned_data.csv
 
 # IDE
 .vscode/
