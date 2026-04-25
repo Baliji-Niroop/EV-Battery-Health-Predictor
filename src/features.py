@@ -30,6 +30,10 @@ def main() -> None:
         df = pd.read_csv(input_path)
         print(f"[INFO] Loaded {len(df)} rows")
         print(f"[INFO] Columns: {list(df.columns)}")
+        # Cycle‑count sanity check
+        min_cycles = df.groupby("battery_id")["cycle"].count().min()
+        if min_cycles < 50:
+            print(f"[WARN] Battery with only {min_cycles} cycles detected — results may be unreliable")
     except Exception as exc:
         print(f"[ERROR] Failed to load CSV: {exc}")
         return
@@ -84,14 +88,10 @@ def main() -> None:
 
     # New Feature 6: Internal resistance proxy (Ohm) approximated as voltage/current
     print("[DEBUG] Computing internal_resistance_proxy")
-    def _resistance(v, i):
-        try:
-            return float(v) / float(i) if i != 0 else np.nan
-        except Exception:
-            return np.nan
-    df["internal_resistance_proxy"] = df.apply(
-        lambda row: _resistance(row["voltage_mean"], row["current_mean"]), axis=1
-    )
+    # Vectorized calculation to replace slow row‑by‑row apply
+    df["internal_resistance_proxy"] = (
+        df["voltage_mean"] / df["current_mean"].replace(0, np.nan)
+    ).fillna(0.0)
     
     # Fill NaN values safely
     print("[DEBUG] Filling NaN values")
@@ -104,8 +104,6 @@ def main() -> None:
     print(f"\n[INFO] ===== FEATURE ENGINEERING COMPLETE =====")
     print(f"[INFO] Total rows: {len(df)}")
     print(f"[INFO] Columns: {list(df.columns)}")
-    print(f"[INFO] Sample rows (first 5):")
-    print(df.head())
     
     # Save features
     output_path.parent.mkdir(parents=True, exist_ok=True)

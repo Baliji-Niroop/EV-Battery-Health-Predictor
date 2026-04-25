@@ -39,8 +39,8 @@ The model predicts battery health with reasonable accuracy and follows the degra
 
 | Metric | Value |
 |--------|-------|
-| MAE | ~1.8% |
-| RMSE | ~2.5% |
+| MAE | 0.1079 (≈0.108) |
+| RMSE | 0.1637 (≈0.164) |
 
 ### Model Prediction
 ![SoH Prediction](outputs/soh_prediction_scatter.png)

@@ -70,10 +70,12 @@ def main() -> None:
         # Find cycle where SoH drops below 80%
         soh_fail = 80.0
         cycles_below_80 = np.where(soh_pred < soh_fail)[0]
-        
+        # Map index to actual cycle numbers
+        actual_cycles = df_batt["cycle"].values
+        current_cycle = int(df_batt["cycle"].iloc[-1])
         if len(cycles_below_80) > 0:
-            k_fail = cycles_below_80[0]
-            current_cycle = int(df_batt["cycle"].iloc[-1])
+            k_fail_cycle = actual_cycles[cycles_below_80[0]]
+            k_fail = int(k_fail_cycle)
             rul = max(k_fail - current_cycle, 0)
         else:
             k_fail = "N/A"

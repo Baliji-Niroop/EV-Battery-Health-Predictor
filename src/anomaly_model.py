@@ -32,12 +32,12 @@ def main() -> None:
     try:
         df = pd.read_csv(input_path)
         print(f"[INFO] Loaded {len(df)} rows")
+        # Cycle‑count sanity check
+        min_cycles = df.groupby("battery_id")["cycle"].count().min()
+        if min_cycles < 50:
+            print(f"[WARN] Battery with only {min_cycles} cycles detected — results may be unreliable")
     except Exception as exc:
         print(f"[ERROR] Failed to load CSV: {exc}")
-        return
-    
-    if df.empty:
-        print("[ERROR] Input data is empty")
         return
     
     # Prepare data
