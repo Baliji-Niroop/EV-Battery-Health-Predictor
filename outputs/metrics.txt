@@ -1,3 +1,4 @@
-MAE: 0.1079
-RMSE: 0.1637
+MAE: 0.5780
+RMSE: 0.7622
 Baseline_MAE: 0.0000
+Test_Batteries: ['B0007']

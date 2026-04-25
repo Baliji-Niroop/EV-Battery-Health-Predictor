@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List
 
 import numpy as np
 import pandas as pd
@@ -109,7 +108,7 @@ def main() -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     try:
         df.to_csv(output_path, index=False)
-        print(f"\n[INFO] ✓ Saved features to: {output_path}")
+        print(f"\n[INFO] Saved features to: {output_path}")
     except Exception as exc:
         print(f"[ERROR] Failed to save CSV: {exc}")
 

@@ -4,6 +4,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+print("EV Battery Health Pipeline v1.0")
+
 
 def print_header(step_name: str) -> None:
     """Print formatted header for each step."""
@@ -84,21 +86,30 @@ def main() -> None:
     # Step 1: Preprocessing
     preprocess_script = src_dir / "preprocess.py"
     cleaned_data_path = get_processed_dir() / "cleaned_data.csv"
-    
-    if not run_script(preprocess_script, cleaned_data_path, "STEP 1: PREPROCESSING"):
-        print("\n[FATAL] Pipeline aborted at preprocessing stage")
-        sys.exit(1)
+    raw_dir = get_data_dir() / "raw"
+    if not raw_dir.exists() or not any(raw_dir.iterdir()):
+        print("No raw data found, using existing processed data")
+    else:
+        if not run_script(preprocess_script, cleaned_data_path, "STEP 1: PREPROCESSING"):
+            print("\n[FATAL] Pipeline aborted at preprocessing stage")
+            sys.exit(1)
     
     # Step 2: Feature Engineering
     features_script = src_dir / "features.py"
     features_path = get_processed_dir() / "features.csv"
-    
-    if not run_script(features_script, features_path, "STEP 2: FEATURE ENGINEERING"):
-        print("\n[FATAL] Pipeline aborted at feature engineering stage")
-        sys.exit(1)
+    if not cleaned_data_path.exists() and features_path.exists():
+        print("Cleaned data not found, using existing features data")
+    else:
+        if not run_script(features_script, features_path, "STEP 2: FEATURE ENGINEERING"):
+            print("\n[FATAL] Pipeline aborted at feature engineering stage")
+            sys.exit(1)
+            
+    # Ensure processed features exist before proceeding
+    if not features_path.exists():
+        raise FileNotFoundError("No processed data found. Please run preprocessing with dataset.")
     
     # Step 3: Model Training
-    model_script = src_dir / "anomaly_model.py"
+    model_script = src_dir / "soh_model.py"
     model_path = get_models_dir() / "xgb_model.pkl"
     
     if not run_script(model_script, model_path, "STEP 3: MODEL TRAINING"):

@@ -22,7 +22,7 @@ def main() -> None:
     
     if not model_path.exists():
         print(f"[ERROR] Model not found: {model_path}")
-        print("[ERROR] Please run src/anomaly_model.py first")
+        print("[ERROR] Please run src/soh_model.py first")
         return
     
     print(f"[INFO] Loading features from: {input_path}")
@@ -56,8 +56,19 @@ def main() -> None:
     for battery_id in sorted(batteries):
         df_batt = df[df["battery_id"] == battery_id].sort_values("cycle").reset_index(drop=True)
         
-        # Prepare features for prediction
-        feature_cols = [col for col in df.columns if col not in ["battery_id", "cycle", "SoH"]]
+        import json
+        schema_path = models_dir / "feature_schema.json"
+        if schema_path.exists():
+            with open(schema_path) as f:
+                feature_cols = json.load(f)
+            missing = [c for c in feature_cols if c not in df.columns]
+            if missing:
+                print(f"[ERROR] Feature mismatch. Missing: {missing}")
+                continue
+        else:
+            # Fallback if schema doesn't exist yet
+            feature_cols = [col for col in df.columns if col not in ["battery_id", "cycle", "SoH"]]
+            
         X_batt = df_batt[feature_cols].fillna(0.0)
         
         # Predict SoH

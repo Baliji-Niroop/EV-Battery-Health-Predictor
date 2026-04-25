@@ -149,8 +149,18 @@ def main() -> None:
         st.subheader("RUL Estimation & Predictions")
         
         if model is not None:
-            # Get feature columns (exclude metadata)
-            feature_cols = [col for col in df_battery.columns if col not in ["battery_id", "cycle", "SoH"]]
+            import json
+            schema_path = MODELS_DIR / "feature_schema.json"
+            if schema_path.exists():
+                with open(schema_path) as f:
+                    feature_cols = json.load(f)
+                missing = [c for c in feature_cols if c not in df_battery.columns]
+                if missing:
+                    st.error(f"Feature mismatch. Missing: {missing}")
+                    st.stop()
+            else:
+                # Fallback if schema doesn't exist yet
+                feature_cols = [col for col in df_battery.columns if col not in ["battery_id", "cycle", "SoH"]]
             
             try:
                 X_battery = df_battery[feature_cols].fillna(0.0)
