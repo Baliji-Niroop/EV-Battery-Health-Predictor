@@ -14,9 +14,11 @@ Engineering transparency is essential when building machine learning solutions f
    * In reality, ambient temperatures swing between winter extremes (-20°C) and hot summer driving (45°C+), heavily influencing electrolyte conductivity and internal resistance.
 3. **Limited Battery Sample Size:**
    * Training on 3–4 cells (18650 cylindrical LiCoO2/graphite chemistry) limits statistical generalization to other modern EV chemistries (such as Lithium Iron Phosphate - LFP, or Nickel Manganese Cobalt - NMC 811).
-4. **Capacity Feature Dependency:**
-   * The primary feature set uses measured discharge capacity ($Ah$). In production vehicles, capacity cannot be directly measured on the fly without running a full 100%-to-0% Coulomb-counting discharge calibration.
-   * For continuous real-time driving, the sensor-only feature configuration (documented in `docs/RESULTS.md`) should be utilized.
+4. **No Future RUL Forecast:**
+   * This release reports the first observed cycle at or below 80% SoH and zero RUL for profiles that have already crossed the threshold.
+   * A future threshold estimate for a still-healthy profile requires validated future feature values or a separate degradation-trend forecast; the current model does not extrapolate.
+5. **Not Safety-Certified:**
+   * The project is for research and demonstration. It is not a real-time battery safety monitor or certified BMS and must not be used as the sole basis for battery operation or retirement decisions.
 
 ---
 

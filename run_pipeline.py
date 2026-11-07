@@ -13,9 +13,10 @@ OUTPUTS_DIR = PROJECT_ROOT / "outputs"
 
 def print_step_header(step_num: int, total_steps: int, title: str) -> None:
     """Prints a clear, formatted step header."""
-    print("\n" + "=" * 65)
-    print(f"  Step {step_num}/{total_steps}: {title}")
-    print("=" * 65)
+    print(
+        f"\n{'=' * 65}\n  Step {step_num}/{total_steps}: {title}\n{'=' * 65}",
+        flush=True,
+    )
 
 
 def run_subcommand(script_name: str, step_num: int, total_steps: int, title: str) -> bool:
@@ -27,30 +28,25 @@ def run_subcommand(script_name: str, step_num: int, total_steps: int, title: str
         print(f"[ERROR] Script not found: {script_path}")
         return False
 
-    try:
-        result = subprocess.run(
-            [sys.executable, str(script_path)],
-            text=True,
-            check=False,
-        )
-        if result.returncode != 0:
-            print(f"[ERROR] {title} failed with exit code {result.returncode}")
-            return False
-        return True
-    except Exception as exc:
-        print(f"[ERROR] Execution failed for {title}: {exc}")
+    result = subprocess.run(
+        [sys.executable, str(script_path)],
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        print(f"[ERROR] {title} failed with exit code {result.returncode}")
         return False
+    return True
 
 
 def main() -> None:
     """Executes the end-to-end EV Battery Health & RUL ML Pipeline."""
-    print("\n" + "#" * 65)
+    print("\n" + "#" * 65, flush=True)
     print("  EV BATTERY HEALTH & RUL PREDICTION PIPELINE")
     print("  Author: Baliji Niroop | Machine Learning Pipeline")
     print("#" * 65)
 
     raw_dir = DATA_DIR / "raw"
-    cleaned_data_path = DATA_DIR / "processed" / "cleaned_data.csv"
     features_path = DATA_DIR / "processed" / "features.csv"
 
     # Step 1: Preprocessing raw NASA .mat files
@@ -72,13 +68,9 @@ def main() -> None:
             sys.exit(1)
 
     # Step 2: Feature Engineering
-    if cleaned_data_path.exists():
-        if not run_subcommand("features.py", 2, 4, "Feature Engineering"):
-            print("[FATAL] Pipeline stopped at Step 2.")
-            sys.exit(1)
-    else:
-        print_step_header(2, 4, "Feature Engineering")
-        print("[INFO] Cleaned raw data not present; verified features.csv is ready.")
+    if not run_subcommand("features.py", 2, 4, "Feature Engineering"):
+        print("[FATAL] Pipeline stopped at Step 2.")
+        sys.exit(1)
 
     # Step 3: Model Training (XGBoost & Baseline Linear Regression)
     if not run_subcommand("soh_model.py", 3, 4, "Training XGBoost & Evaluating Models"):

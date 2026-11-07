@@ -261,8 +261,8 @@ def process_file(file_path: Path) -> pd.DataFrame:
 def clean_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     """Cleans parsed cycle records and calculates State of Health (SoH).
 
-    SoH is calculated as the ratio of current measured capacity to nominal
-    maximum capacity of that cell, scaled to a percentage (0-100%).
+    SoH is calculated relative to the first valid measured capacity for each
+    cell, scaled to a percentage.
 
     Parameters
     ----------
@@ -277,14 +277,21 @@ def clean_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return df
 
-    # Fill missing values using modern forward-then-backward filling
-    df = df.ffill().bfill().fillna(0.0)
-    df = df.dropna(how="all", subset=["capacity", "voltage_mean", "current_mean", "temp_mean"])
+    df = df.copy()
+    df["capacity"] = pd.to_numeric(df["capacity"], errors="coerce")
+    df = df.loc[df["capacity"].gt(0)].copy()
 
-    # Compute SoH per battery: (capacity / max_capacity) * 100%
-    df["SoH"] = df.groupby("battery_id")["capacity"].transform(
-        lambda x: (x / x.max()) * 100.0 if x.max() > 0 else np.nan
-    )
+    for column in ("voltage_mean", "current_mean", "temp_mean"):
+        df[column] = df.groupby("battery_id")[column].transform(
+            lambda values: values.ffill().bfill()
+        )
+    df[["voltage_mean", "current_mean", "temp_mean"]] = df[
+        ["voltage_mean", "current_mean", "temp_mean"]
+    ].fillna(0.0)
+
+    # Use the first measured capacity as the reference; this avoids a future-derived baseline.
+    initial_capacity = df.groupby("battery_id")["capacity"].transform("first")
+    df["SoH"] = df["capacity"].div(initial_capacity.where(initial_capacity > 0)) * 100.0
 
     return df
 
@@ -322,7 +329,7 @@ def main() -> None:
             print("Note: If data/processed/features.csv is already present, the pipeline")
             print("will use the preprocessed features directly.")
             print("=" * 65 + "\n")
-            return
+            raise SystemExit(1)
 
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
@@ -355,7 +362,7 @@ def main() -> None:
         df.to_csv(output_path, index=False)
         print(f"[SUCCESS] Cleaned data saved: {output_path} ({len(df)} rows)")
     else:
-        print("[WARN] No valid battery cycles could be parsed from the files provided.")
+        raise SystemExit("[ERROR] No valid battery discharge cycles could be parsed.")
 
 
 if __name__ == "__main__":

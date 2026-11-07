@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import joblib
-import numpy as np
 import pandas as pd
 
 
@@ -13,7 +12,7 @@ def estimate_battery_rul(
     feature_cols: list[str],
     failure_threshold_soh: float = 80.0,
 ) -> dict[str, object]:
-    """Estimates the Remaining Useful Life (RUL) for a battery profile.
+    """Reports observed end-of-life and RUL for a battery profile.
 
     Parameters
     ----------
@@ -29,8 +28,9 @@ def estimate_battery_rul(
     Returns
     -------
     dict[str, object]
-        Computed RUL metrics including current cycle, current SoH,
-        predicted failure cycle, and remaining cycles.
+        Observed health, the first measured cycle at or below the threshold,
+        and zero RUL if that threshold has already been reached. Future RUL
+        cannot be inferred from historical samples alone.
     """
     X_batt = df_battery[feature_cols].fillna(0.0)
     soh_pred = model.predict(X_batt)
@@ -38,21 +38,21 @@ def estimate_battery_rul(
     current_cycle = int(df_battery["cycle"].iloc[-1])
     current_soh = float(df_battery["SoH"].iloc[-1])
 
-    # Find first cycle where predicted SoH dips below threshold
-    cycles_below_threshold = np.where(soh_pred < failure_threshold_soh)[0]
-    actual_cycles = df_battery["cycle"].values
-
-    if len(cycles_below_threshold) > 0:
-        k_fail = int(actual_cycles[cycles_below_threshold[0]])
-        rul = max(k_fail - current_cycle, 0)
+    if current_soh <= failure_threshold_soh:
+        eol_cycle = int(
+            df_battery.loc[
+                df_battery["SoH"] <= failure_threshold_soh, "cycle"
+            ].iloc[0]
+        )
+        rul: int | str = 0
     else:
-        k_fail = None
-        rul = "Healthy (>80% SoH)"
+        eol_cycle = None
+        rul = "Not estimable from historical data"
 
     return {
         "current_cycle": current_cycle,
         "current_soh": current_soh,
-        "predicted_failure_cycle": k_fail,
+        "observed_eol_cycle": eol_cycle,
         "rul_cycles": rul,
         "soh_predictions": soh_pred,
     }
@@ -69,12 +69,12 @@ def main() -> None:
     schema_path = models_dir / "feature_schema.json"
 
     if not input_path.exists():
-        print(f"[ERROR] Features file not found at: {input_path}")
-        return
+        raise SystemExit(f"[ERROR] Features file not found at: {input_path}")
 
     if not model_path.exists():
-        print(f"[ERROR] Model file not found at: {model_path}. Run src/soh_model.py first.")
-        return
+        raise SystemExit(
+            f"[ERROR] Model file not found at: {model_path}. Run src/soh_model.py first."
+        )
 
     print(f"[INFO] Loading features from: {input_path}")
     df = pd.read_csv(input_path)
@@ -95,15 +95,26 @@ def main() -> None:
 
     for b_id in batteries:
         df_batt = df[df["battery_id"] == b_id].sort_values("cycle").reset_index(drop=True)
+        missing_features = set(feature_cols).difference(df_batt.columns)
+        if missing_features:
+            raise SystemExit(
+                f"[ERROR] Battery {b_id} is missing model features: "
+                f"{sorted(missing_features)}"
+            )
         res = estimate_battery_rul(df_batt, model, feature_cols)
 
-        k_str = f"Cycle {res['predicted_failure_cycle']}" if res["predicted_failure_cycle"] else "None (Healthy)"
+        eol_cycle = res["observed_eol_cycle"]
+        k_str = (
+            f"Cycle {eol_cycle}"
+            if eol_cycle is not None
+            else "Not reached in observed data"
+        )
         rul_str = f"{res['rul_cycles']} cycles" if isinstance(res['rul_cycles'], int) else str(res['rul_cycles'])
 
         print(f"[Battery {b_id}]")
         print(f"  * Latest Tested Cycle:   {res['current_cycle']}")
         print(f"  * Current State of Health: {res['current_soh']:.2f}%")
-        print(f"  * First Cycle Below 80%:  {k_str}")
+        print(f"  * First Observed EOL Cycle: {k_str}")
         print(f"  * Remaining Useful Life:  {rul_str}")
         print("-" * 55)
 

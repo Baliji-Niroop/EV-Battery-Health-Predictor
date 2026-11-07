@@ -27,15 +27,21 @@ def compute_features(df: pd.DataFrame) -> pd.DataFrame:
     pd.DataFrame
         DataFrame augmented with engineered features.
     """
-    df = df.sort_values(["battery_id", "cycle"]).reset_index(drop=True)
+    required_columns = {
+        "battery_id",
+        "cycle",
+        "capacity",
+        "voltage_mean",
+        "current_mean",
+        "temp_mean",
+    }
+    missing_columns = required_columns.difference(df.columns)
+    if missing_columns:
+        raise ValueError(f"Missing required telemetry columns: {sorted(missing_columns)}")
 
-    # Ensure SoH exists
-    if "SoH" not in df.columns:
-        max_capacity = df["capacity"].max(skipna=True)
-        if pd.isna(max_capacity) or max_capacity == 0:
-            df["SoH"] = np.nan
-        else:
-            df["SoH"] = (df["capacity"] / max_capacity) * 100.0
+    df = df.sort_values(["battery_id", "cycle"]).reset_index(drop=True).copy()
+    initial_capacity = df.groupby("battery_id")["capacity"].transform("first")
+    df["SoH"] = df["capacity"].div(initial_capacity.where(initial_capacity > 0)) * 100.0
 
     # Feature 1: Capacity fade rate (per-cycle delta in Ampere-hours)
     df["capacity_fade_rate"] = df.groupby("battery_id")["capacity"].transform(
@@ -63,10 +69,11 @@ def compute_features(df: pd.DataFrame) -> pd.DataFrame:
         df["voltage_mean"] / df["current_mean"].replace(0, np.nan)
     ).fillna(0.0)
 
-    # Fill any remaining NaNs
-    for col in df.columns:
-        if df[col].dtype in ["float64", "float32"]:
-            df[col] = df[col].bfill().ffill().fillna(0.0)
+    numeric_columns = df.select_dtypes(include="number").columns
+    for col in numeric_columns:
+        df[col] = df.groupby("battery_id")[col].transform(
+            lambda values: values.ffill().bfill()
+        ).fillna(0.0)
 
     return df
 
@@ -83,18 +90,19 @@ def main() -> None:
 
     if not input_path.exists():
         if output_path.exists():
-            print(f"[INFO] Using existing processed features from: {output_path}")
-            return
-        print(f"[ERROR] Cleaned data missing at: {input_path}")
-        print("Please run src/preprocess.py first or supply data/processed/features.csv.")
-        return
-
-    print(f"[INFO] Loading cleaned data: {input_path}")
-    df = pd.read_csv(input_path)
+            print(f"[INFO] Refreshing existing processed features from: {output_path}")
+            df = pd.read_csv(output_path)
+        else:
+            raise SystemExit(
+                f"[ERROR] Cleaned data and existing features are missing. "
+                f"Expected {input_path} or {output_path}."
+            )
+    else:
+        print(f"[INFO] Loading cleaned data: {input_path}")
+        df = pd.read_csv(input_path)
 
     if df.empty:
-        print("[ERROR] Input cleaned data is empty.")
-        return
+        raise SystemExit("[ERROR] Input data is empty.")
 
     print("[INFO] Computing engineered features...")
     df_features = compute_features(df)

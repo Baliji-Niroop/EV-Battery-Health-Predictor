@@ -1,6 +1,6 @@
 # Streamlit Dashboard Guide
 
-The repository includes a web dashboard built with **Streamlit** to provide real-time battery health monitoring and Remaining Useful Life (RUL) estimation.
+The repository includes a **Streamlit** dashboard for inspecting historical battery health, model SoH predictions, and observed end-of-life status.
 
 ---
 
@@ -38,14 +38,18 @@ Open your web browser at **`http://localhost:8501`**.
 
 ### View 3: Model Predictions & RUL Estimation Tab
 ![Predictions and RUL View](images/dashboard_view_predictions_rul.png)
-*Figure 3: Overlay comparing Actual measured SoH with XGBoost Predicted SoH over time, highlighting the predicted failure cycle and total remaining useful life before reaching the 80% threshold.*
+*Figure 3: Overlay comparing measured and predicted SoH on the available profile. The dashboard reports observed EOL and zero RUL after the measured profile crosses 80%; it does not extrapolate a future threshold crossing.*
 
 ### View 4: Critical / Warning State Alert
 ![Warning Alert View](images/dashboard_view_warning_state.png)
-*Figure 4: Automated alert system displaying warning indicators when a battery (such as aged cell B0018) drops past safety margins and requires replacement.*
+*Figure 4: The dashboard flags poor health for B0006, whose latest measured SoH is below the configured status threshold.*
 
 ---
 
 ## 3. Sidebar Controls
 * **Battery Selector Dropdown:** Switch dynamically between batteries (`B0005`, `B0006`, `B0007`, `B0018`) to inspect telemetry and predictions for each unit independently.
 * **Telemetry Overview:** Instant sidebar readout of selected battery metadata.
+
+## 4. RUL Scope
+
+The supplied data contains completed historical battery profiles. For profiles still above the 80% threshold, the dashboard reports that future RUL is unavailable rather than treating the last observed cycle as a predicted failure. The SoH model does not extrapolate beyond recorded cycles.

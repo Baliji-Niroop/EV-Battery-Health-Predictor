@@ -44,7 +44,7 @@ A common question is why gradient-boosted decision trees (XGBoost) were selected
 ## 4. Train / Test Split Strategy & Data Leakage Avoidance
 
 ### The Danger of Random Splitting
-In battery prognostics, randomly splitting cycles (e.g. 80% train, 20% test via `train_test_split`) causes severe **data leakage**. Consecutive cycles (e.g. cycle 41 and cycle 42 of cell B0005) share near-identical states. A model evaluated this way memorizes cell trajectories, yielding an artificially low error (`MAE = 0.26% SoH`).
+In battery prognostics, randomly splitting cycles (e.g. 80% train, 20% test via `train_test_split`) causes **data leakage**. Consecutive cycles (e.g. cycle 41 and cycle 42 of cell B0005) share near-identical states. A model evaluated this way can memorize cell trajectories, yielding an artificially optimistic error (`MAE = 0.8492% SoH`).
 
 ### The Solution: Battery-wise Validation
 To accurately simulate a real-world BMS deploying onto an unseen vehicle battery:
@@ -55,15 +55,15 @@ This guarantees that the model learns general electrochemical aging dynamics rat
 
 ---
 
-## 5. RUL Calculation Methodology
+## 5. End-of-Life and RUL Reporting
 
 ```mermaid
 flowchart TD
-    A["Trained XGBoost Model"] --> B["Predict SoH Profile for all cycles"]
-    B --> C["Identify first cycle where Predicted SoH < 80.0%"]
-    C --> D{"Crosses 80% Threshold?"}
-    D -- Yes --> E["Failure Cycle = k_fail<br/>RUL = max(k_fail - current_cycle, 0)"]
-    D -- No --> F["RUL = Healthy (>80% SoH)"]
+    A["Observed SoH Profile"] --> B{"Measured SoH <= 80%?"}
+    B -- Yes --> C["Report first observed EOL cycle<br/>RUL = 0"]
+    B -- No --> D["Future RUL unavailable"]
 ```
 
-The 80% SoH threshold is the global automotive standard (USABC / SAE) where lithium-ion batteries exhibit accelerated impedance rise and are retired from vehicle traction service into second-life stationary storage.
+The 80% threshold is a commonly used battery end-of-life convention, not a universal safety guarantee. This release reports the first observed cycle at or below the threshold and zero RUL once a supplied profile has crossed it. A model applied only to historical rows cannot estimate a future crossing for a still-healthy battery; forecasting that crossing requires a validated future-feature or degradation-trend model and is outside this release.
+
+The trained SoH model uses sensor-only inputs (`voltage_mean`, `current_mean`, `temp_mean`, `dV_dt`, `dT_dt`, and `internal_resistance_proxy`). Capacity and capacity-derived features are excluded to avoid predicting a label directly from its measurement.

@@ -59,7 +59,7 @@ graph TD
 | **`src/preprocess.py`** | Pipeline Step 1 | Parses nested MATLAB `.mat` structs safely into tabular cycle telemetry. | Generates `data/processed/cleaned_data.csv`. |
 | **`src/features.py`** | Pipeline Step 2 | Computes rates of change ($\frac{dV}{dt}$, $\frac{dT}{dt}$), resistance proxy ($V/I$), and 5-cycle rolling averages. | Generates `data/processed/features.csv`. |
 | **`src/soh_model.py`** | Pipeline Step 3 | Implements battery-wise cross-validation, trains XGBoost, benchmarks against Linear Regression, and exports model artifacts. | Saves `models/xgb_model.pkl`, `feature_schema.json`, and `outputs/metrics.txt`. |
-| **`src/rul_estimator.py`** | Pipeline Step 4 | Scans predicted degradation trajectories to identify the exact cycle where SoH drops below 80%. | Outputs console summary of remaining cycles per battery. |
+| **`src/rul_estimator.py`** | Pipeline Step 4 | Reports the first observed SoH cycle at or below 80%; reports zero RUL after observed end-of-life and no future estimate otherwise. | Outputs console summary per battery. |
 | **`dashboard/app.py`** | Web Dashboard | Interactive Streamlit interface with 3 tabs: Health Status, SoH Trend, and Predictions & RUL. | Serves interactive UI at `http://localhost:8501`. |
 | **`scripts/generate_figures.py`** | Asset Generator | Programmatically reproduces all publication-quality evaluation charts at 200 DPI. | Saves 6 figures to `docs/images/`. |
 | **`scripts/capture_screenshots.py`** | UI Automation | Uses Playwright to capture authentic headless screenshots of the dashboard. | Saves 4 UI screenshots to `docs/images/`. |
@@ -75,7 +75,7 @@ flowchart LR
     B --> C["Feature Extraction<br/>dV/dt, dT/dt, V/I, rolling means"]
     C --> D["XGBoost Regressor<br/>Non-linear curve fitting"]
     D --> E["Predicted SoH (%)<br/>Continuous health profile"]
-    E --> F["RUL Calculation<br/>Cycles until SoH < 80%"]
+    E --> F["Observed EOL Reporting<br/>Threshold crossing in available data"]
 ```
 
 ---

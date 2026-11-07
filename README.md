@@ -6,25 +6,25 @@
 [![XGBoost](https://img.shields.io/badge/XGBoost-2.0+-EB5424.svg)](https://xgboost.readthedocs.io/)
 [![Code Style](https://img.shields.io/badge/Code%20Style-Clean%20%26%20Documented-059669.svg)](#)
 
-> Machine learning pipeline predicting electric vehicle lithium-ion battery degradation (State of Health) and Remaining Useful Life (RUL) using XGBoost on the NASA Battery Aging dataset, featuring an interactive Streamlit monitoring dashboard.
+> Machine learning pipeline predicting battery State of Health (SoH) from sensor telemetry and reporting observed end-of-life status on NASA battery profiles.
 
 ---
 
 ## 📸 Dashboard Preview
 
 ![EV Battery Health Dashboard](docs/images/dashboard_view_health_status.png)
-*Interactive Streamlit dashboard tracking real-time State of Health (SoH), operating temperatures, and battery condition alerts.*
+*Interactive Streamlit dashboard for historical State of Health (SoH), operating temperatures, and battery condition alerts.*
 
 ---
 
 ## ⚡ What is this?
 
-This is an end-to-end engineering project that predicts how fast lithium-ion electric vehicle batteries degrade over hundreds of charge-discharge cycles. By learning from real electrochemical laboratory telemetry published by NASA, the system forecasts a battery's **State of Health (SoH)** and estimates its **Remaining Useful Life (RUL)** before it reaches the standard 80% end-of-life threshold.
+This is an end-to-end engineering project that analyzes lithium-ion battery degradation over charge-discharge cycles. Using NASA laboratory telemetry, the system predicts **State of Health (SoH)** from voltage, current, and temperature sensors and identifies when an observed battery profile has crossed the 80% end-of-life threshold. It does not extrapolate a future RUL for a battery that has not yet crossed that threshold.
 
 ### 🚗 Why it matters:
-* **EV Safety:** Lithium-ion cells that operate beyond their safe operational lifespan risk thermal runaway, internal short circuits, and sudden roadside shutdowns.
-* **Cost Savings:** Battery packs represent 30% to 40% of the total cost of an electric car. Accurate health prediction prevents premature battery replacements.
-* **Second-Life Utilization:** Helps energy storage providers know exactly when retired EV batteries can safely be repurposed for stationary solar and grid storage.
+* **Maintenance Planning:** Transparent health estimates can support battery inspection and maintenance workflows.
+* **Second-Life Research:** Historical health trends can support research into second-life battery assessment.
+* **Important:** This research project is not a safety monitor, certified battery-management system, or replacement for engineering inspection.
 
 ---
 
@@ -32,9 +32,9 @@ This is an end-to-end engineering project that predicts how fast lithium-ion ele
 
 | Benchmark Metric | XGBoost (Ours) | Baseline Linear Regression | Evaluation Notes |
 | :--- | :--- | :--- | :--- |
-| **Primary Test MAE (Unseen Cell B0007)** | **0.7951% SoH** | 0.0000% SoH (degenerated) | Battery-wise cross validation |
-| **Primary Test RMSE (Unseen Cell B0007)**| **1.0511% SoH** | 0.0000% SoH (degenerated) | Battery-wise cross validation |
-| **Sensor-Only Features MAE (All Cells)** | **3.34% SoH** | 8.01% SoH | **58.3% error reduction** without direct capacity |
+| **Primary Test MAE (Unseen Cell B0007)** | **1.7999% SoH** | 7.6508% SoH | Held-out battery; sensor-only features |
+| **Primary Test RMSE (Unseen Cell B0007)**| **2.1841% SoH** | 10.0095% SoH | Held-out battery; sensor-only features |
+| **Leave-One-Battery-Out Mean MAE** | **2.6160% SoH** | 9.8507% SoH | **73.4% lower error** across four cells |
 | **Tested Batteries** | B0005, B0006, B0007, B0018 | NASA Ames PCoE 18650 run-to-failure cycles |
 
 *(Units note: All MAE and RMSE values are expressed in percentage points of State of Health: `% SoH`).*
@@ -61,8 +61,8 @@ This is an end-to-end engineering project that predicts how fast lithium-ion ele
 
 ## 💡 Key Definitions (in plain English)
 
-* **State of Health (SoH):** The percentage of charge storage capacity currently left in the battery compared to when it was brand new ($100\% \to 80\% \to \text{dead}$).
-* **Remaining Useful Life (RUL):** The estimated number of charge-discharge cycles left before the battery hits the safe retirement limit.
+* **State of Health (SoH):** Measured capacity relative to the cell's first valid measured capacity, expressed as a percentage.
+* **Remaining Useful Life (RUL):** Cycles remaining before a selected end-of-life threshold. This release reports zero after an observed crossing and does not forecast a future crossing.
 * **Capacity Fade:** The gradual, irreversible drop in a battery's maximum energy storage capability over repeated use.
 * **Rolling Average:** A moving average calculated across the past 5 cycles to filter out temporary electrical noise and sensor fluctuations.
 * **XGBoost:** An optimized machine learning algorithm that builds a sequence of smart decision trees, with each tree correcting the errors of the previous ones.
@@ -74,7 +74,7 @@ This is an end-to-end engineering project that predicts how fast lithium-ion ele
 - [x] **Safe MATLAB Parsing:** Automated extraction of nested telemetry (`.mat`) structures into clean tabular records.
 - [x] **Engineered Telemetry:** Computes cycle-over-cycle voltage rate ($\frac{dV}{dt}$), thermal shifts ($\frac{dT}{dt}$), and internal cell resistance proxy ($V/I$).
 - [x] **Leakage-Free Validation:** Strict battery-wise evaluation (training on B0005/B0006/B0018, testing on completely unseen B0007).
-- [x] **Interactive Streamlit Web App:** Real-time health metrics, degradation line charts, RUL predictions, and critical condition alerts.
+- [x] **Interactive Streamlit Web App:** Historical health metrics, SoH predictions, observed end-of-life status, and condition alerts.
 - [x] **Automated Pipeline Runner:** Step-by-step terminal execution with clean progress tracking and smoke tests.
 
 ---
@@ -97,7 +97,7 @@ flowchart TD
     end
 
     subgraph S4["Step 4: Inference & Presentation"]
-        E --> F["RUL Estimation Engine<br/>(Scans curve for 80% EOL crossing)"]
+        E --> F["Observed EOL Reporting<br/>(First measured SoH at or below 80%)"]
         F --> G["Streamlit Web Dashboard<br/>(Interactive charts, telemetry & warnings)"]
     end
 ```
@@ -105,7 +105,7 @@ flowchart TD
 1. **Step 1: Read Telemetry:** Parses nested MATLAB `.mat` files into structured cycle metrics (voltage, current, temperature, discharge capacity).
 2. **Step 2: Feature Engineering:** Calculates rate of change ($\frac{dV}{dt}$, $\frac{dT}{dt}$), internal resistance proxy, and 5-cycle moving averages.
 3. **Step 3: Train XGBoost:** Learns non-linear electrochemical degradation patterns on training batteries and evaluates on a held-out battery.
-4. **Step 4: Interactive Dashboard:** Visualizes battery health trends and computes remaining useful life cycles in an intuitive web dashboard.
+4. **Step 4: End-of-Life Reporting:** Reports the first observed 80% threshold crossing; future RUL is not extrapolated by this release.
 
 ---
 
@@ -120,7 +120,7 @@ EV-BATTERY-HEALTH/
 ├── data/
 │   ├── raw/                        # NASA .mat files (downloaded by user or extracted)
 │   └── processed/
-│       ├── cleaned_data.csv        # Preprocessed cycle-level telemetry
+│       ├── cleaned_data.csv        # Generated from raw data when available
 │       └── features.csv            # Final engineered feature table
 │
 ├── docs/
@@ -129,6 +129,7 @@ EV-BATTERY-HEALTH/
 │   ├── METHODOLOGY.md              # Feature engineering & ML design rationale
 │   ├── RESULTS.md                  # Comprehensive benchmarks, LOBO tables & discussion
 │   ├── DASHBOARD.md                # Dashboard usage walkthrough & screenshot gallery
+├── PROJECT_GUIDE.md            # Setup, pipeline stages, and model scope
 │   ├── LIMITATIONS_AND_FUTURE_WORK.md # Operational boundaries & technical roadmap
 │   └── images/                     # Real figures and authentic UI screenshots
 │
@@ -151,12 +152,13 @@ EV-BATTERY-HEALTH/
 │   └── soh_model.py                # Model training, baseline evaluation & validation
 │
 ├── tests/
-│   └── test_pipeline.py            # Automated smoke test checking model and inference
+│   └── test_pipeline.py            # Smoke and regression tests
 │
 ├── .gitignore                      # Clean exclusion of temporary & cache files
 ├── LICENSE                         # Permissive MIT License (Baliji Niroop)
 ├── README.md                       # Main project documentation & quickstart
-├── requirements.txt                # Pinned and verified Python dependencies
+├── requirements.txt                # Runtime and test dependencies
+├── requirements-dev.txt            # Optional Playwright screenshot tooling
 ├── run_app.bat                     # One-click Windows launch script
 ├── run_app.sh                      # One-click macOS / Linux launch script
 └── run_pipeline.py                 # Master step-by-step ML pipeline runner
@@ -201,9 +203,9 @@ Runs preprocessing, feature engineering, model training, and RUL estimation in 4
 python run_pipeline.py
 ```
 
-### 4. Run the smoke test
+### 4. Run the test suite
 ```bash
-python tests/test_pipeline.py
+python -m pytest -q
 ```
 
 ### 5. Launch the Streamlit dashboard
@@ -229,10 +231,10 @@ Open your browser at **`http://localhost:8501`**.
 | ![Health Status](docs/images/dashboard_view_health_status.png) | ![SoH Trend](docs/images/dashboard_view_soh_trend.png) |
 | *Status metrics, cycle count, and condition badge* | *Complete historical capacity fade curve* |
 
-| View 3: XGBoost Predictions & RUL | View 4: Critical Battery Alert |
+| View 3: SoH Predictions & EOL Status | View 4: Low-Health Alert |
 | :---: | :---: |
 | ![Predictions & RUL](docs/images/dashboard_view_predictions_rul.png) | ![Warning State](docs/images/dashboard_view_warning_state.png) |
-| *Predicted degradation vs. actual with RUL cycles* | *Automated alert when SoH drops below safe thresholds* |
+| *Predicted vs. measured SoH and observed EOL status* | *Alert when measured SoH drops below the selected threshold* |
 
 ---
 
@@ -244,11 +246,11 @@ Open your browser at **`http://localhost:8501`**.
 
 ### 2. Predicted vs. Actual SoH (Held-Out Battery B0007)
 ![Predicted vs Actual](docs/images/2_predicted_vs_actual_soh.png)
-*Figure 2: Performance on unseen battery B0007 (XGBoost MAE: 0.80% SoH), showing tight scatter fit and accurate degradation trajectory tracking.*
+*Figure 2: Performance on unseen battery B0007 (XGBoost MAE: 1.80% SoH), with predicted and measured degradation trajectories.*
 
 ### 3. Baseline Comparison (Sensor-Only Features)
 ![Model Comparison](docs/images/6_model_comparison_bar_chart.png)
-*Figure 3: Benchmark comparison on operational sensor features: XGBoost achieves an average 58.3% error reduction over baseline linear regression.*
+*Figure 3: Leave-one-battery-out sensor-only comparison: XGBoost reduces mean absolute error by 73.4% across four cells.*
 
 ### 4. Feature Importance Rankings
 ![Feature Importance](docs/images/4_xgboost_feature_importance.png)
@@ -258,24 +260,20 @@ Open your browser at **`http://localhost:8501`**.
 
 ## 💡 Real Dashboard Output Example
 
-When inspecting battery **B0005** inside the dashboard:
-* **Initial State:** Brand new cell at Cycle 1 has $100\%$ SoH ($2.035\text{ Ah}$).
-* **Mid-Life Checkpoint (Cycle 142):** Measured SoH is **$85.58\%$** with ~96 cycles of remaining life left until the 80% threshold.
-* **First Cycle Crossing 80% EOL:** Reached at **Cycle 238** (SoH drops to $79.70\%$).
-* **Current Final State (Cycle 616):** Fully aged cell; the dashboard flags **0 cycles remaining** with a **CRITICAL / MAINTENANCE REQUIRED** warning banner.
+The supplied B0007 profile is a completed historical run: its observed SoH first reaches 80% at cycle 443 and is 75.75% at its last observed cycle (614). The dashboard reports that end-of-life has been reached and shows 0 remaining cycles. For a profile still above 80%, future RUL is reported as unavailable; the current model does not forecast beyond the observed data.
 
 ---
 
 ## ⚙️ Engineering Design Decisions
 
 1. **Why XGBoost instead of Deep Neural Networks (LSTM)?**
-   * **Dataset Size:** With ~1,280 total cycles, LSTMs easily overfit and require complex tuning. Gradient-boosted trees perform exceptionally well on tabular sensor aggregates.
+   * **Dataset Size:** With 1,277 observed records across four cells, LSTMs easily overfit and require complex tuning. Gradient-boosted trees perform well on tabular sensor aggregates.
    * **Inference Latency:** Tree evaluation executes in microseconds on low-cost automotive microcontrollers.
    * **Explainability:** Feature importance provides direct insight into why a health prediction was made.
 2. **Why Rolling Averages?**
    * Battery voltage and temperature fluctuate due to ambient chamber cycles and load variations. 5-cycle rolling windows filter out transient noise without lagging physical trends.
 3. **Why the 80% SoH Threshold?**
-   * Recognized internationally by automotive standards (USABC, SAE) as the boundary where internal cell impedance rises rapidly, making the battery unsuitable for high-draw acceleration.
+   * It is a commonly used battery end-of-life convention; it is not a universal safety guarantee and may vary by application.
 
 ---
 
@@ -283,7 +281,8 @@ When inspecting battery **B0005** inside the dashboard:
 
 * **Laboratory Constant Discharge:** Tested under constant 2.0A load rather than real-world dynamic driving cycles (like WLTP or US06).
 * **Controlled Temperature:** Cycled primarily at 24°C; real cars face winter sub-zero freezes and summer desert heat.
-* **Roadmap:** Incorporate variable driving cycles from the Oxford battery dataset, implement thermal compensation curves, and export models to embedded C for microcontrollers.
+* **RUL boundary:** The current release reports observed end-of-life; it does not extrapolate future SoH from a still-healthy profile.
+* **Roadmap:** Incorporate variable driving cycles from the Oxford battery dataset, implement thermal compensation curves, forecast future SoH with time-series validation, and export models to embedded C for microcontrollers.
 * *Read more in [docs/LIMITATIONS_AND_FUTURE_WORK.md](docs/LIMITATIONS_AND_FUTURE_WORK.md).*
 
 ---

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Sequence, TypedDict
+
 import joblib
 import numpy as np
 import pandas as pd
@@ -10,24 +12,32 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error
 from sklearn.model_selection import train_test_split
 from xgboost import XGBRegressor
 
-# Fixed operational feature columns used for SoH prediction
+# Use only measurements available without a direct capacity/SoH-derived input.
 FEATURE_COLS = [
     "voltage_mean",
     "current_mean",
     "temp_mean",
-    "capacity",
     "dV_dt",
     "dT_dt",
     "internal_resistance_proxy",
-    "capacity_fade_rate",
 ]
+
+
+class EvaluationResults(TypedDict):
+    xgb_mae: float
+    xgb_rmse: float
+    baseline_mae: float
+    baseline_rmse: float
+    model: XGBRegressor
+    y_test: pd.Series
+    y_pred: np.ndarray
 
 
 def train_and_evaluate(
     df: pd.DataFrame,
     features: list[str],
-    test_batteries: list[str] = ("B0007",),
-) -> dict[str, float]:
+    test_batteries: Sequence[str] = ("B0007",),
+) -> EvaluationResults:
     """Trains XGBoost and Linear Regression on training batteries and tests on held-out battery.
 
     Parameters
@@ -44,10 +54,22 @@ def train_and_evaluate(
     dict[str, float]
         Evaluation metrics (MAE and RMSE in % SoH) for XGBoost and Baseline Linear Regression.
     """
-    df_clean = df.ffill().bfill().fillna(0.0)
+    missing_features = set(features).difference(df.columns)
+    if missing_features:
+        raise ValueError(f"Missing model features: {sorted(missing_features)}")
+    if "battery_id" not in df or "SoH" not in df:
+        raise ValueError("Training data must include battery_id and SoH columns.")
+
+    df_clean = df.copy()
+    for column in [*features, "SoH"]:
+        df_clean[column] = df_clean.groupby("battery_id")[column].transform(
+            lambda values: values.ffill().bfill()
+        ).fillna(0.0)
 
     train_mask = ~df_clean["battery_id"].isin(test_batteries)
     test_mask = df_clean["battery_id"].isin(test_batteries)
+    if not train_mask.any() or not test_mask.any():
+        raise ValueError("Both training and held-out battery rows are required.")
 
     X_train = df_clean.loc[train_mask, features]
     y_train = df_clean.loc[train_mask, "SoH"]
@@ -101,11 +123,13 @@ def main() -> None:
     outputs_dir.mkdir(parents=True, exist_ok=True)
 
     if not input_path.exists():
-        print(f"[ERROR] Features file not found at: {input_path}")
-        return
+        raise SystemExit(f"[ERROR] Features file not found at: {input_path}")
 
     print(f"[INFO] Loading features from: {input_path}")
     df = pd.read_csv(input_path)
+    missing_features = set(FEATURE_COLS + ["battery_id", "SoH"]).difference(df.columns)
+    if missing_features:
+        raise SystemExit(f"[ERROR] Features data is missing columns: {sorted(missing_features)}")
 
     # Primary Benchmark: Battery-wise split (Train on B0005, B0006, B0018; Test on B0007)
     test_battery = ["B0007"]
@@ -113,7 +137,11 @@ def main() -> None:
     results = train_and_evaluate(df, FEATURE_COLS, test_batteries=test_battery)
 
     # Secondary Benchmark: Random 80/20 cycle split (to document data leakage impact)
-    df_clean = df.ffill().bfill().fillna(0.0)
+    df_clean = df.copy()
+    for column in [*FEATURE_COLS, "SoH"]:
+        df_clean[column] = df_clean.groupby("battery_id")[column].transform(
+            lambda values: values.ffill().bfill()
+        ).fillna(0.0)
     X_rnd = df_clean[FEATURE_COLS]
     y_rnd = df_clean["SoH"]
     X_tr_r, X_te_r, y_tr_r, y_te_r = train_test_split(

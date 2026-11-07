@@ -14,7 +14,7 @@ Three primary cells are analyzed in this repository:
 * **B0007**: 18650 Li-ion cell run at room temperature (24°C).
 * *(Also included in processed telemetry: **B0018**, tested under accelerated thermal aging).*
 
-Each cell underwent repeated test profiles until its capacity degraded past 30% fade (well below the EV automotive retirement threshold of 20% fade / 80% SoH).
+Each cell underwent repeated test profiles until its capacity degraded past 30% fade (well below the commonly used 80% SoH end-of-life threshold).
 
 ---
 
@@ -63,7 +63,7 @@ B0005
 ```
 
 ### Parsing Pipeline (`src/preprocess.py`)
-Because nested MATLAB structs can be awkward to read directly in Python, `src/preprocess.py` extracts the mean discharge telemetry and true discharge capacity for every cycle, generating the clean tabular format saved in `data/processed/cleaned_data.csv` and `data/processed/features.csv`.
+Because nested MATLAB structs can be awkward to read directly in Python, `src/preprocess.py` extracts records with valid positive discharge capacity, computes SoH relative to each cell's first measured capacity, and saves the clean tabular data to `data/processed/cleaned_data.csv`. Feature engineering writes the resulting table to `data/processed/features.csv`.
 
 ---
 
@@ -88,7 +88,7 @@ The raw MATLAB files are approximately 150 MB and are not checked into git. If y
    python run_pipeline.py
    ```
 
-*(Note: Pre-extracted features are already supplied at `data/processed/features.csv`, so you can immediately train models and run the dashboard without re-downloading the raw files!)*
+*(Note: Pre-extracted features are already supplied at `data/processed/features.csv`, so you can immediately train models and run the dashboard without re-downloading the raw files. The included labels use each cell's first valid capacity as its baseline, and known synthetic cycle-616 terminal spikes are excluded.)*
 
 ---
 

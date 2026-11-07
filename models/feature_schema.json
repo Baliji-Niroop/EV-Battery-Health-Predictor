@@ -2,9 +2,7 @@
   "voltage_mean",
   "current_mean",
   "temp_mean",
-  "capacity",
   "dV_dt",
   "dT_dt",
-  "internal_resistance_proxy",
-  "capacity_fade_rate"
+  "internal_resistance_proxy"
 ]

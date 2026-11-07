@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 import joblib
-import numpy as np
 import pandas as pd
 import streamlit as st
+
+from src.rul_estimator import estimate_battery_rul
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 
@@ -60,8 +61,8 @@ def main() -> None:
     """Run Streamlit dashboard."""
     configure_page()
     
-    st.title("EV Battery Health & RUL Estimation")
-    st.write("Real-time monitoring and predictive maintenance for battery systems")
+    st.title("EV Battery Health Dashboard")
+    st.write("Historical SoH prediction and observed end-of-life status")
     
     # Load data
     df = load_data()
@@ -95,7 +96,9 @@ def main() -> None:
         st.sidebar.write("**Current SoH:** N/A")
     
     # Main content tabs
-    tab1, tab2, tab3 = st.tabs(["Health Status", "SoH Trend", "Predictions"])
+    tab1, tab2, tab3 = st.tabs(
+        ["Health Status", "SoH Trend", "SoH Predictions & EOL"]
+    )
     
     # TAB 1: Health Status
     with tab1:
@@ -146,7 +149,7 @@ def main() -> None:
     
     # TAB 3: Predictions & RUL
     with tab3:
-        st.subheader("RUL Estimation & Predictions")
+        st.subheader("SoH Prediction & Observed End-of-Life")
         
         if model is not None:
             import json
@@ -163,8 +166,8 @@ def main() -> None:
                 feature_cols = [col for col in df_battery.columns if col not in ["battery_id", "cycle", "SoH"]]
             
             try:
-                X_battery = df_battery[feature_cols].fillna(0.0)
-                soh_pred = model.predict(X_battery)
+                rul_result = estimate_battery_rul(df_battery, model, feature_cols)
+                soh_pred = rul_result["soh_predictions"]
                 
                 # Create prediction dataframe
                 df_battery_pred = df_battery.copy()
@@ -177,29 +180,26 @@ def main() -> None:
 
                 
                 # RUL Calculation
-                st.subheader("Remaining Useful Life (RUL)")
+                st.subheader("Observed End-of-Life & RUL Status")
                 
-                # Find cycle where predicted SoH drops below 80%
-                cycles_below_80 = np.where(soh_pred < 80.0)[0]
-                if len(cycles_below_80) > 0:
-                    # Map index back to actual cycle number
-                    k_fail = df_battery["cycle"].iloc[cycles_below_80[0]]
-                else:
-                    # No failure predicted; use last cycle as fallback
-                    k_fail = df_battery["cycle"].iloc[-1]
-                current_cycle = int(df_battery["cycle"].iloc[-1])
-                rul = max(k_fail - current_cycle, 0)
+                eol_cycle = rul_result["observed_eol_cycle"]
+                rul = rul_result["rul_cycles"]
 
                 col1, col2, col3 = st.columns(3)
-                col1.metric("Predicted Failure Cycle", int(k_fail))
+                col1.metric(
+                    "Observed EOL Cycle",
+                    int(eol_cycle) if eol_cycle is not None else "Not reached",
+                )
                 col2.metric("RUL (cycles remaining)", rul)
-                
-                if rul <= 0:
-                    col3.error("⚠ CRITICAL")
-                elif rul <= 100:
+
+                if isinstance(rul, int) and rul <= 0:
+                    col3.error("⚠ EOL REACHED")
+                elif isinstance(rul, int) and rul <= 100:
                     col3.warning("⚠ WARNING")
-                else:
+                elif isinstance(rul, int):
                     col3.success("✓ HEALTHY")
+                else:
+                    col3.info("RUL unavailable")
                 
             except Exception as exc:
                 st.error(f"Failed to generate predictions: {exc}")
