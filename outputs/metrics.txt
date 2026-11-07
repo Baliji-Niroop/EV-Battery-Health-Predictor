@@ -1,4 +1,10 @@
-MAE: 0.5780
-RMSE: 0.7622
+Primary_Test_Batteries: ['B0007']
+Primary_XGBoost_MAE_pct: 0.7951
+Primary_XGBoost_RMSE_pct: 1.0511
+Primary_Baseline_LR_MAE_pct: 0.0000
+Primary_Baseline_LR_RMSE_pct: 0.0000
+Secondary_Random_MAE_pct: 0.2628
+Secondary_Random_RMSE_pct: 0.4199
+MAE: 0.7951
+RMSE: 1.0511
 Baseline_MAE: 0.0000
-Test_Batteries: ['B0007']

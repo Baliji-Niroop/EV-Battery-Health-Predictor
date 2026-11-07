@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import joblib
 import numpy as np
 import pandas as pd
-from sklearn.metrics import mean_absolute_error, mean_squared_error
 from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_absolute_error, mean_squared_error
+from sklearn.model_selection import train_test_split
 from xgboost import XGBRegressor
 
-# Fixed feature columns for model consistency
+# Fixed operational feature columns used for SoH prediction
 FEATURE_COLS = [
     "voltage_mean",
     "current_mean",
@@ -20,158 +22,190 @@ FEATURE_COLS = [
     "capacity_fade_rate",
 ]
 
-def main() -> None:
-    """Load features and train XGBoost regressor for SoH prediction."""
-    np.random.seed(42)
-    root = Path(__file__).resolve().parents[1]
 
-    data_dir = root / "data"
-    input_path = data_dir / "processed" / "features.csv"
+def train_and_evaluate(
+    df: pd.DataFrame,
+    features: list[str],
+    test_batteries: list[str] = ("B0007",),
+) -> dict[str, float]:
+    """Trains XGBoost and Linear Regression on training batteries and tests on held-out battery.
 
-    # Ensure models directory exists
-    models_dir = root / "models"
-    models_dir.mkdir(parents=True, exist_ok=True)
-    model_path = models_dir / "xgb_model.pkl"
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame with feature columns, 'battery_id', and target 'SoH'.
+    features : list[str]
+        List of feature column names.
+    test_batteries : list[str]
+        Battery identifiers reserved strictly for testing (avoids data leakage).
 
-    if not input_path.exists():
-        print(f"[ERROR] Input file not found: {input_path}")
-        return
+    Returns
+    -------
+    dict[str, float]
+        Evaluation metrics (MAE and RMSE in % SoH) for XGBoost and Baseline Linear Regression.
+    """
+    df_clean = df.ffill().bfill().fillna(0.0)
 
-    print(f"[INFO] Loading features from: {input_path}")
+    train_mask = ~df_clean["battery_id"].isin(test_batteries)
+    test_mask = df_clean["battery_id"].isin(test_batteries)
 
-    try:
-        df = pd.read_csv(input_path)
-        print(f"[INFO] Loaded {len(df)} rows")
-        # Cycle‑count sanity check
-        min_cycles = df.groupby("battery_id")["cycle"].count().min()
-        if min_cycles < 50:
-            print(f"[WARN] Battery with only {min_cycles} cycles detected — results may be unreliable")
-    except Exception as exc:
-        print(f"[ERROR] Failed to load CSV: {exc}")
-        return
+    X_train = df_clean.loc[train_mask, features]
+    y_train = df_clean.loc[train_mask, "SoH"]
 
-    # Prepare data
-    print("[DEBUG] Preparing training data")
+    X_test = df_clean.loc[test_mask, features]
+    y_test = df_clean.loc[test_mask, "SoH"]
 
-    # Target: SoH
-    if "SoH" not in df.columns:
-        print("[ERROR] SoH column not found")
-        return
+    # Baseline: Linear Regression
+    lr = LinearRegression()
+    lr.fit(X_train, y_train)
+    lr_pred = lr.predict(X_test)
+    lr_mae = float(mean_absolute_error(y_test, lr_pred))
+    lr_rmse = float(np.sqrt(mean_squared_error(y_test, lr_pred)))
 
-    # Features: drop non-numeric columns and target columns
-    # We use FEATURE_COLS to ensure consistency.
-
-    # Fill any missing values before training
-    # Fill NaNs using modern methods
-    df = df.ffill().bfill().fillna(0)
-
-    # Check for missing features
-    missing = [c for c in FEATURE_COLS if c not in df.columns]
-    if missing:
-        raise ValueError(f"Missing required feature columns: {missing}")
-
-    X = df[FEATURE_COLS]
-    y = df["SoH"]
-
-    # Train-test split
-    print("[DEBUG] Splitting data: battery-wise split to avoid leakage")
-    # Get unique batteries
-    unique_batteries = list(df["battery_id"].unique())
-    np.random.shuffle(unique_batteries)
-    split_idx = int(0.75 * len(unique_batteries))
-    train_batts = set(unique_batteries[:split_idx])
-    test_batts = set(unique_batteries[split_idx:])
-    train_mask = df["battery_id"].isin(train_batts)
-    test_mask = df["battery_id"].isin(test_batts)
-    X_train, X_test = X[train_mask], X[test_mask]
-    y_train, y_test = y[train_mask], y[test_mask]
-
-    print(f"[DEBUG] Train size: {len(X_train)}, Test size: {len(X_test)}")
-
-    # Train XGBoost
-    print("[INFO] Training XGBoost Regressor")
-    model = XGBRegressor(
+    # Main Model: XGBoost Regressor
+    xgb = XGBRegressor(
         n_estimators=100,
         max_depth=5,
         learning_rate=0.1,
         subsample=0.8,
         colsample_bytree=0.8,
         random_state=42,
-        verbose=0
     )
+    xgb.fit(X_train, y_train)
+    xgb_pred = xgb.predict(X_test)
+    xgb_mae = float(mean_absolute_error(y_test, xgb_pred))
+    xgb_rmse = float(np.sqrt(mean_squared_error(y_test, xgb_pred)))
 
-    model.fit(X_train, y_train)
-    print("[INFO] Training complete")
+    return {
+        "xgb_mae": xgb_mae,
+        "xgb_rmse": xgb_rmse,
+        "baseline_mae": lr_mae,
+        "baseline_rmse": lr_rmse,
+        "model": xgb,
+        "y_test": y_test,
+        "y_pred": xgb_pred,
+    }
 
-    print("\n[INFO] ===== BASELINE COMPARISON =====")
-    baseline_model = LinearRegression()
-    baseline_model.fit(X_train, y_train)
-    y_pred_baseline = baseline_model.predict(X_test)
-    baseline_mae = mean_absolute_error(y_test, y_pred_baseline)
-    print(f"Baseline (Linear Regression) MAE: {baseline_mae:.4f}")
 
-    # Evaluate
-    print("\n[DEBUG] Evaluating model")
-    y_pred = model.predict(X_test)
+def main() -> None:
+    """Trains the SoH prediction models, saves artifacts, and outputs benchmark metrics."""
+    np.random.seed(42)
+    root = Path(__file__).resolve().parents[1]
 
-    mae = mean_absolute_error(y_test, y_pred)
-    rmse = np.sqrt(mean_squared_error(y_test, y_pred))
-
-    print("\n[INFO] ===== MODEL PERFORMANCE =====")
-    print(f"XGBoost MAE: {mae:.4f}")
-    print(f"[INFO] RMSE: {rmse:.4f}")
-
-    # Save metrics to text file
+    data_dir = root / "data"
+    input_path = data_dir / "processed" / "features.csv"
+    models_dir = root / "models"
     outputs_dir = root / "outputs"
-    outputs_dir.mkdir(parents=True, exist_ok=True)
-    metrics_path = outputs_dir / "metrics.txt"
-    try:
-        with open(metrics_path, "w", encoding="utf-8") as f:
-            f.write(f"MAE: {mae:.4f}\n")
-            f.write(f"RMSE: {rmse:.4f}\n")
-            f.write(f"Baseline_MAE: {baseline_mae:.4f}\n")
-            # Log which batteries were used for testing
-            f.write(f"Test_Batteries: {sorted(list(test_batts))}\n")
-        print(f"[INFO] Saved metrics to: {metrics_path}")
-    except Exception as exc:
-        print(f"[ERROR] Failed to save metrics: {exc}")
 
-    # Save a plot of the predictions
+    models_dir.mkdir(parents=True, exist_ok=True)
+    outputs_dir.mkdir(parents=True, exist_ok=True)
+
+    if not input_path.exists():
+        print(f"[ERROR] Features file not found at: {input_path}")
+        return
+
+    print(f"[INFO] Loading features from: {input_path}")
+    df = pd.read_csv(input_path)
+
+    # Primary Benchmark: Battery-wise split (Train on B0005, B0006, B0018; Test on B0007)
+    test_battery = ["B0007"]
+    print(f"[INFO] Splitting data: Battery-wise split (Held-out test: {test_battery})")
+    results = train_and_evaluate(df, FEATURE_COLS, test_batteries=test_battery)
+
+    # Secondary Benchmark: Random 80/20 cycle split (to document data leakage impact)
+    df_clean = df.ffill().bfill().fillna(0.0)
+    X_rnd = df_clean[FEATURE_COLS]
+    y_rnd = df_clean["SoH"]
+    X_tr_r, X_te_r, y_tr_r, y_te_r = train_test_split(
+        X_rnd, y_rnd, test_size=0.2, random_state=42
+    )
+    xgb_rnd = XGBRegressor(
+        n_estimators=100,
+        max_depth=5,
+        learning_rate=0.1,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        random_state=42,
+    )
+    xgb_rnd.fit(X_tr_r, y_tr_r)
+    rnd_preds = xgb_rnd.predict(X_te_r)
+    rnd_mae = float(mean_absolute_error(y_te_r, rnd_preds))
+    rnd_rmse = float(np.sqrt(mean_squared_error(y_te_r, rnd_preds)))
+
+    # Display results
+    print("\n" + "=" * 50)
+    print("  MODEL EVALUATION RESULTS (Units: % SoH)")
+    print("=" * 50)
+    print(f"Primary Battery-wise Split (Test: B0007):")
+    print(f"  * XGBoost MAE:  {results['xgb_mae']:.4f}% SoH")
+    print(f"  * XGBoost RMSE: {results['xgb_rmse']:.4f}% SoH")
+    print(f"  * Baseline LR MAE:  {results['baseline_mae']:.4f}% SoH")
+    print(f"  * Baseline LR RMSE: {results['baseline_rmse']:.4f}% SoH")
+    print(f"\nSecondary Random-cycle Split (With Cycle Leakage):")
+    print(f"  * XGBoost MAE:  {rnd_mae:.4f}% SoH")
+    print(f"  * XGBoost RMSE: {rnd_rmse:.4f}% SoH")
+    print("=" * 50)
+
+    # Save metrics file
+    metrics_path = outputs_dir / "metrics.txt"
+    with open(metrics_path, "w", encoding="utf-8") as f:
+        f.write(f"Primary_Test_Batteries: {test_battery}\n")
+        f.write(f"Primary_XGBoost_MAE_pct: {results['xgb_mae']:.4f}\n")
+        f.write(f"Primary_XGBoost_RMSE_pct: {results['xgb_rmse']:.4f}\n")
+        f.write(f"Primary_Baseline_LR_MAE_pct: {results['baseline_mae']:.4f}\n")
+        f.write(f"Primary_Baseline_LR_RMSE_pct: {results['baseline_rmse']:.4f}\n")
+        f.write(f"Secondary_Random_MAE_pct: {rnd_mae:.4f}\n")
+        f.write(f"Secondary_Random_RMSE_pct: {rnd_rmse:.4f}\n")
+        # Legacy compatible keys for backward compatibility
+        f.write(f"MAE: {results['xgb_mae']:.4f}\n")
+        f.write(f"RMSE: {results['xgb_rmse']:.4f}\n")
+        f.write(f"Baseline_MAE: {results['baseline_mae']:.4f}\n")
+    print(f"[INFO] Saved metrics to: {metrics_path}")
+
+    # Save model and feature schema
+    model_path = models_dir / "xgb_model.pkl"
+    schema_path = models_dir / "feature_schema.json"
+
+    joblib.dump(results["model"], model_path)
+    with open(schema_path, "w", encoding="utf-8") as f:
+        json.dump(FEATURE_COLS, f, indent=2)
+    print(f"[SUCCESS] Model saved: {model_path}")
+    print(f"[SUCCESS] Feature schema saved: {schema_path}")
+
+    # Generate and save scatter plot
     try:
         import matplotlib.pyplot as plt
-        outputs_dir = root / "outputs"
-        outputs_dir.mkdir(parents=True, exist_ok=True)
 
-        plt.figure(figsize=(10, 6))
-        plt.scatter(y_test, y_pred, alpha=0.5, color='blue', label='Predictions')
-        plt.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--', lw=2, label='Perfect Fit')
-        plt.xlabel('Actual SoH')
-        plt.ylabel('Predicted SoH')
-        plt.title('Actual vs Predicted State of Health (SoH)')
-        plt.legend()
-        plt.grid(True, linestyle='--', alpha=0.7)
+        y_test = results["y_test"]
+        y_pred = results["y_pred"]
+
+        plt.figure(figsize=(8, 6), dpi=150)
+        plt.scatter(y_test, y_pred, alpha=0.6, color="#2563EB", label="Predictions")
+        plt.plot(
+            [y_test.min(), y_test.max()],
+            [y_test.min(), y_test.max()],
+            "r--",
+            lw=2,
+            label="Ideal Perfect Fit (y = x)",
+        )
+        plt.xlabel("Actual SoH (%)", fontsize=11, fontweight="bold")
+        plt.ylabel("Predicted SoH (%)", fontsize=11, fontweight="bold")
+        plt.title(
+            f"Actual vs. Predicted SoH on Held-out Battery B0007 (XGBoost MAE: {results['xgb_mae']:.2f}%)",
+            fontsize=12,
+            fontweight="bold",
+        )
+        plt.legend(frameon=True)
+        plt.grid(True, linestyle="--", alpha=0.6)
         plt.tight_layout()
 
-        plot_path = outputs_dir / "soh_prediction_scatter.png"
-        plt.savefig(plot_path)
+        scatter_path = outputs_dir / "soh_prediction_scatter.png"
+        plt.savefig(scatter_path)
         plt.close()
-        print(f"[INFO] Saved prediction scatter plot to: {plot_path}")
-    except Exception as e:
-        print(f"[WARN] Could not generate plot: {e}")
-
-    # Save model
-    model_path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        joblib.dump(model, model_path)
-        print(f"\n[INFO] Saved model to: {model_path}")
-        
-        import json
-        schema_path = models_dir / "feature_schema.json"
-        with open(schema_path, "w") as f:
-            json.dump(FEATURE_COLS, f)
-        print(f"[INFO] Saved feature schema to: {schema_path}")
+        print(f"[SUCCESS] Scatter plot saved: {scatter_path}")
     except Exception as exc:
-        print(f"[ERROR] Failed to save model or schema: {exc}")
+        print(f"[WARN] Failed to plot scatter: {exc}")
+
 
 if __name__ == "__main__":
     main()
